@@ -1,0 +1,199 @@
+import numpy as np 
+import matplotlib.pyplot as plt
+import seaborn as sns
+from fitter import Fitter, get_common_distributions, get_distributions
+from scipy.stats import pearsonr
+from scipy import signal as sig
+import pandas as pd
+import xlrd
+import pyexcel as pe
+#import pyexcel.ext.xls
+
+#Let's start with the Weakly Exces Deaths sheet from the "Deaths registered weekly in England and Wales, provisional" data set
+data = pe.get_array(file_name = r'C:\Users\Lenovo\Desktop\UK-PS\Covid-19\publishedweek462021.xlsx', sheet_name = 'Weekly Excess Deaths')
+data = data[5:94]#only the data that matters (list of lists)
+#next, I create a matrix with the data
+if len(data[0][1]) == 6:
+    wk = int(data[0][1][5])
+else:
+    wk = int(data[0][1][5]) * 10 + int(data[0][1][6])
+df = data[0][0:1] + [wk] + data[0][2:]
+for i in range(len(data)-1):
+    if len(data[i+1][1]) == 6:
+        wk = int(data[i+1][1][5])
+    else:
+        wk = int(data[i+1][1][5]) * 10 + int(data[i+1][1][6])
+    line = data[i+1][0:1] + [wk] + data[i+1][2:]
+    df = np.vstack((df,line))
+m,n = df.shape
+
+#As it can be seen, we have the deaths registered in four situations: Home, Hospital, Carer home and Other
+#and for each, we have All Deaths, Covid-19 deaths, All deaths five year average and Excess deaths (All deaths - All deaths five years average)
+
+
+#comparing the number of deaths from all death places 
+plt.figure()
+plt.plot(df[:,2],'k')
+plt.plot(df[:,4], 'k--')
+plt.plot(df[:,6],'b')
+plt.plot(df[:,8],'b--')
+plt.plot(df[:,10],'m')
+plt.plot(df[:,12],'m--')
+plt.plot(df[:,14],'r')
+plt.plot(df[:,16],'r--')
+plt.xlabel('Weeks')
+plt.ylabel('Number of deaths')
+plt.title('All deaths vs average evolution')
+plt.legend(['Home', 'Home avg', 'Hospital', 'Hospital avg', 'Care home', 'Care home avg', 'Others', 'Others avg'])
+plt.show()
+#plt.savefig(r'C:\Users\Lenovo\Desktop\UK-PS\Covid-19\deaths.png')
+
+#visualizing the excees deaths in order to see if/how the Covid-19 affected the number of deaths
+plt.figure()
+plt.plot(df[:,5],'k')
+plt.plot(df[:,9],'b')
+plt.plot(df[:,13],'m')
+plt.plot(df[:,17],'r')
+plt.xlabel('Weeks')
+plt.ylabel('Excess deaths')
+plt.title('Excess deaths evolution in time')
+plt.show()
+#plt.savefig(r'C:\Users\Lenovo\Desktop\UK-PS\Covid-19\excess.png')
+
+#next, let's take a look on the covid-19 deaths
+plt.figure()
+plt.plot(df[:,3],'k')
+plt.plot(df[:,7],'b')
+plt.plot(df[:,11],'m')
+plt.plot(df[:,15],'r')
+plt.xlabel('Weeks')
+plt.ylabel('Number of deaths')
+plt.title('Covid-19 deaths evolution')
+plt.legend(['Home', 'Hospital', 'Care home', 'Others'])
+plt.show()
+#plt.savefig(r'C:\Users\Lenovo\Desktop\UK-PS\Covid-19\cov.png')
+
+#I think it would be interesting to see what % of the deaths are related to Covid-19
+perc_home = (df[:,3]*100)/df[:,2]
+print('The maximum percentage form home deaths due to Covid-19 is:', max(perc_home))
+perc_hospital = (df[:,7]*100)/df[:,6]
+print('The maximum percentage form hospital deaths due to Covid-19 is:', max(perc_hospital))
+perc_care = (df[:,11]*100)/df[:,10]
+print('The maximum percentage form care home deaths due to Covid-19 is:', max(perc_care))
+perc_others = (df[:,15]*100)/df[:,14]
+perc_all = ((df[:,3] + df[:,7] + df[:,11] + df[:,15])*100)/(df[:,2] + df[:,6] + df[:,10] + df[:,14])
+print('The maximum percentage form all deaths due to Covid-19 is:', max(perc_all))
+
+plt.figure()
+plt.plot(perc_home,'k')
+plt.plot(perc_hospital,'b')
+plt.plot(perc_care,'m')
+plt.plot(perc_others,'r')
+plt.plot(perc_all,'y--')
+plt.xlabel('Weeks')
+plt.ylabel('Percetage(%)')
+plt.title('Percentage of deaths due to Covid-19')
+plt.legend(['Home', 'Hospital', 'Care home', 'Others', 'All'])
+plt.show()
+#plt.savefig(r'C:\Users\Lenovo\Desktop\UK-PS\Covid-19\percentage.png')
+
+#I also consider interesitng to see what are the similarities between the number of Covid-19 deaths from two different years (2020 and 2021)
+#In order to see if there are any simmilarities, I'll compute the correlation coefficient for matching weeks
+
+
+weeks_2020 = []
+covid_2020_home = []
+covid_2020_hospital = []
+covid_2020_care = []
+covid_2020_others = []
+weeks_2021 = []
+covid_2021_home = []
+covid_2021_hospital = []
+covid_2021_care = []
+covid_2021_others = []
+
+for i in range(m):
+    if df[i,0] == 2020:
+        weeks_2020 = weeks_2020 + [df[i,1]]
+        covid_2020_home = covid_2020_home + [df[i,3]]
+        covid_2020_hospital = covid_2020_hospital + [df[i,7]]
+        covid_2020_care = covid_2020_care + [df[i,11]]
+        covid_2020_others = covid_2020_others + [df[i,15]]
+    else:
+        weeks_2021 = weeks_2021 + [df[i,1]]
+        covid_2021_home = covid_2021_home + [df[i,3]]
+        covid_2021_hospital = covid_2021_hospital + [df[i,7]]
+        covid_2021_care = covid_2021_care + [df[i,11]]
+        covid_2021_others = covid_2021_others + [df[i,15]]
+
+covid_2020 = np.vstack((covid_2020_home,covid_2020_hospital,covid_2020_care,covid_2020_others))
+covid_2021 = np.vstack((covid_2021_home,covid_2021_hospital,covid_2021_care,covid_2021_others))
+
+
+#Let's find the matching weeks: between the minimum of 2020 and the maximum of 2021
+min_2020 = min(weeks_2020)
+max_2021 = max(weeks_2021)
+#now, let's update the number of deaths lists 
+weeks_2020 = weeks_2020[:max_2021-min_2020+1]
+covid_2020 = covid_2020[:,:max_2021-min_2020+1]
+weeks_2021 = weeks_2021[min_2020-1:]
+covid_2021 = covid_2021[:,min_2020-1:]
+
+
+#let's compute the correlation coefficient between the number of deaths corresponding to matching weeks
+corr_coeff = []
+for i in range(max_2021-min_2020+1):
+    c,_ = pearsonr(covid_2020[:,i],covid_2021[:,i])
+    corr_coeff = corr_coeff + [c]
+
+plt.figure()
+plt.plot(np.linspace(min_2020,max_2021,max_2021-min_2020+1),corr_coeff)
+plt.xlabel('Weeks')
+plt.ylabel('Correlation coefficent')
+plt.title('Correlation coefficient evolution in time')
+plt.show()
+#plt.savefig(r'C:\Users\Lenovo\Desktop\UK-PS\Covid-19\corr.png')
+
+#For the last part, I think it would be nice to compare the distributions of the number of deaths 
+#I'll consider the average from home, hospital, care home, others
+
+all_deaths_avg = (df[:,2]+df[:,6]+df[:,10]+df[:,14])/4
+covid_deaths_avg = (df[:,3]+df[:,7]+df[:,11]+df[:,15])/4
+all_deaths_five_avg = (df[:,4]+df[:,8]+df[:,12]+df[:,16])/4
+
+#for All deaths
+sns.displot(data = all_deaths_avg, kind="hist", bins = 100, aspect = 1.5)
+f = Fitter(all_deaths_avg, distributions = get_common_distributions())
+f.fit()
+f.summary()
+plt.title('All deaths distribution')
+plt.xlabel('Number of deaths')
+plt.ylabel('Scaled frequency')
+plt.show()
+print('Best distribution for the All deaths data is:',f.get_best(method = 'sumsquare_error'))
+#plt.savefig(r'C:\Users\Lenovo\Desktop\UK-PS\Covid-19\all-distr.png')
+
+#for Covid-19 deaths
+sns.displot(data = covid_deaths_avg, kind="hist", bins = 100, aspect = 1.5)
+f = Fitter(covid_deaths_avg, distributions = get_common_distributions())
+f.fit()
+f.summary()
+plt.title('Covid-19 deaths distribution')
+plt.xlabel('Number of deaths')
+plt.ylabel('Scaled frequency')
+plt.show()
+print('Best distribution for the Covid-19 deaths data is:',f.get_best(method = 'sumsquare_error'))
+#plt.savefig(r'C:\Users\Lenovo\Desktop\UK-PS\Covid-19\cov-distr.png')
+
+#for All Deaths average 5 years
+#for All deaths
+sns.displot(data = all_deaths_five_avg, kind="hist", bins = 100, aspect = 1.5)
+f = Fitter(all_deaths_five_avg, distributions = get_common_distributions())
+f.fit()
+f.summary()
+plt.title('All deaths five years average distribution')
+plt.xlabel('Number of deaths')
+plt.ylabel('Scaled frequency')
+plt.show()
+print('Best distribution for the All deaths five years average data is:',f.get_best(method = 'sumsquare_error'))
+#plt.savefig(r'C:\Users\Lenovo\Desktop\UK-PS\Covid-19\5yrs-distr.png')
